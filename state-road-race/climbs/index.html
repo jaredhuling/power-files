@@ -348,6 +348,14 @@ const YEARS = DATA.editions.map(e => e.year).slice().sort((a, b) => a - b);
 const REFS = Object.keys(DATA.refs).map(Number).sort((a, b) => a - b);
 const CSSCOL = {}, COL = {};
 YEARS.forEach(y => { CSSCOL[y] = ED[y].color || '#95a2b0'; COL[y] = parseInt(CSSCOL[y].replace('#', ''), 16); });
+// the flag's power fill runs toward a fixed reference: 80 percent of the highest
+// 10-second power in either edition (a hard effort but below a sprint), so the fill nears full on the hardest
+// efforts and spills past the box on the very hardest
+let POWER_PEAK = 1;
+YEARS.forEach(y => { const a = ED[y].w10 || []; for (let i = 0; i < a.length; i++) if (a[i] > POWER_PEAK) POWER_PEAK = a[i]; });
+const POWER_REF = 0.7 * POWER_PEAK;
+const PZ_COL = ['#3f8f5f', '#9ac23c', '#f3c74c', '#f08a3c', '#e0553f', '#b8324f'], PZ_CUT = [0.76, 0.91, 1.06, 1.21, 1.5];
+function zoneCol(w, eftp) { const r = w / Math.max(1, eftp); let i = 0; while (i < PZ_CUT.length && r >= PZ_CUT[i]) i++; return PZ_COL[i]; }
 let REF = REFS.indexOf(DATA.default_ref) >= 0 ? DATA.default_ref : REFS[REFS.length - 1];
 const ACTIVE = new Set((DATA.active_years && DATA.active_years.length ? DATA.active_years.map(Number)
   : (YEARS.length > 2 ? YEARS.filter(y => y !== YEARS[0]) : YEARS.slice())).filter(y => YEARS.indexOf(y) >= 0));
@@ -803,29 +811,35 @@ function buildWallSeg(run, A, clips, clipFill, withLabels) {
 function setClip(plane, s) { const p = pointAtS(s), t = tangentAtS(s); plane.normal.copy(t).negate(); plane.constant = t.dot(p); }
 
 // ---------- riders: a low-poly cyclist with a year and power flag ----------
+const FLAG_W = 360, PX = 55, PW = 250, PY = 3, PH = 72;   // canvas width, pill x/width/y/height; the margin right of the pill is for the power spill
 function makeFlag(color, year) {
-  const cv = document.createElement('canvas'); cv.width = 256; cv.height = 112;
+  const cv = document.createElement('canvas'); cv.width = FLAG_W; cv.height = 112;
   const tex = new THREE.CanvasTexture(cv);
   const sp = new THREE.Sprite(new THREE.SpriteMaterial({map: tex, transparent: true, depthTest: false}));
-  sp.scale.set(7.6, 3.3, 1);
-  sp.userData = {cv, tex, year, color, last: null}; sp.renderOrder = 11; regLabel(sp, 'rider');
+  sp.scale.set(10.7, 3.33, 1);
+  sp.userData = {cv, tex, year, color, eftp: ED[year] ? ED[year].eftp : 250, last: null}; sp.renderOrder = 11; regLabel(sp, 'rider');
   return sp;
 }
 function drawFlag(sp, w) {
-  const u = sp.userData, k = Math.round(w / 5);
+  const u = sp.userData, k = Math.round(w / 4);
   if (u.last === k) return; u.last = k;
-  const cx = u.cv.getContext('2d');
-  cx.clearRect(0, 0, 256, 112);
-  rrect(cx, 3, 3, 250, 72, 12);
-  cx.fillStyle = 'rgba(12,17,23,0.86)'; cx.fill();
-  cx.strokeStyle = u.color; cx.lineWidth = 3; cx.stroke();
-  cx.save(); rrect(cx, 3, 3, 250, 72, 12); cx.clip(); cx.fillStyle = u.color; cx.fillRect(3, 3, 11, 72); cx.restore();
+  const cx = u.cv.getContext('2d'); cx.clearRect(0, 0, FLAG_W, 112);
+  const frac = w / POWER_REF, zc = zoneCol(w, u.eftp);
+  rrect(cx, PX, PY, PW, PH, 12); cx.fillStyle = 'rgba(12,17,23,0.88)'; cx.fill();
+  // the zone-colored fill behind the text: how close the effort is to the reference power
+  cx.save(); rrect(cx, PX, PY, PW, PH, 12); cx.clip();
+  cx.fillStyle = zc; cx.globalAlpha = 0.5; cx.fillRect(PX, PY, PW * Math.min(1, frac), PH); cx.restore(); cx.globalAlpha = 1;
+  // over the reference, the fill spills out the right side of the box, glowing
+  if (frac > 1) { const sw = Math.min(46, PW * (frac - 1) * 2.2);
+    cx.save(); cx.shadowColor = zc; cx.shadowBlur = 12; cx.fillStyle = zc; cx.globalAlpha = 0.92;
+    rrect(cx, PX + PW - 3, PY + PH * 0.26, sw, PH * 0.48, 6); cx.fill(); cx.restore(); cx.globalAlpha = 1; }
+  cx.strokeStyle = u.color; cx.lineWidth = 3; rrect(cx, PX, PY, PW, PH, 12); cx.stroke();
+  cx.save(); rrect(cx, PX, PY, PW, PH, 12); cx.clip(); cx.fillStyle = u.color; cx.fillRect(PX, PY, 11, PH); cx.restore();
   cx.textBaseline = 'middle';
   cx.font = '700 36px "Barlow Condensed", Impact, sans-serif'; cx.fillStyle = u.color; cx.textAlign = 'left';
-  cx.fillText(u.year, 24, 40);
+  cx.fillText(u.year, PX + 21, PY + 37);
   cx.font = '600 34px "IBM Plex Mono", monospace'; cx.fillStyle = '#eef1f5'; cx.textAlign = 'right';
-  cx.fillText(Math.round(w) + ' W', 242, 40);
-  cx.fillStyle = 'rgba(200,214,228,0.5)'; cx.fillRect(124, 75, 5, 34);
+  cx.fillText(Math.round(w) + ' W', PX + PW - 11, PY + 37);
   u.tex.needsUpdate = true;
 }
 // A vertical battery above the power flag, climbs only: it charges from empty at
@@ -884,7 +898,7 @@ function makeRider(color, year) {
   shadow.rotation.x = -Math.PI / 2; shadow.position.y = 0.07; g.add(shadow);
   const flag = makeFlag(CSSCOL[year], year); flag.position.set(0, 4.9, 0); g.add(flag);
   let gauge = null;
-  if (MODE === 'climbs') { gauge = makeClimbGauge(CSSCOL[year]); gauge.position.set(0, 8.6, 0); g.add(gauge); }
+  if (MODE === 'climbs') { gauge = makeClimbGauge(CSSCOL[year]); gauge.position.set(0, 7.15, 0); g.add(gauge); }
   // the model is drawn about twice life size: on a fifty mile course the camera sits
   // far enough back that a life size rider would be a couple of pixels
   g.scale.setScalar(RIDER_SCALE);
