@@ -821,31 +821,27 @@ function drawFlag(sp, w) {
 // the foot of the climb to full at the top, by the share of the climb's vertical
 // gain the rider has reached, so you can read how far up the climb each rider is.
 function makeClimbGauge(css) {
-  const cv = document.createElement('canvas'); cv.width = 72; cv.height = 200;
+  const cv = document.createElement('canvas'); cv.width = 236; cv.height = 74;
   const tex = new THREE.CanvasTexture(cv);
   const sp = new THREE.Sprite(new THREE.SpriteMaterial({map: tex, transparent: true, depthTest: false}));
-  sp.scale.set(1.55, 4.3, 1); sp.renderOrder = 11;
+  sp.scale.set(5.2, 1.63, 1); sp.renderOrder = 11;
   sp.userData = {cv, tex, css, last: -2}; return sp;
 }
 function drawClimbGauge(sp, frac) {
   const u = sp.userData, k = Math.round(frac * 100);
   if (u.last === k) return; u.last = k;
-  const cx = u.cv.getContext('2d'); cx.clearRect(0, 0, 72, 200);
-  const bx = 14, bw = 44, topText = 20, capY = topText + 6, capH = 9, top = capY + capH + 2, bottom = 194, bh = bottom - top;
-  cx.textAlign = 'center'; cx.textBaseline = 'alphabetic';
-  cx.font = '700 21px "IBM Plex Mono", monospace'; cx.fillStyle = u.css;
-  cx.fillText(k + '%', 36, topText);                                  // the percent up the climb
-  cx.fillStyle = u.css; rrect(cx, 36 - 11, capY, 22, capH, 3); cx.fill();   // the battery nub
-  rrect(cx, bx, top, bw, bh, 8); cx.fillStyle = 'rgba(12,17,23,0.88)'; cx.fill();
-  cx.strokeStyle = u.css; cx.lineWidth = 3; cx.stroke();
-  const N = 8, gap = 3, seg = (bh - 8 - (N - 1) * gap) / N, filled = frac * N;
-  for (let i = 0; i < N; i++) {
-    const f = Math.max(0, Math.min(1, filled - i)); if (f <= 0) continue;
-    const yy = bottom - 4 - (i + 1) * seg - i * gap;
-    cx.save(); rrect(cx, bx + 5, yy, bw - 10, seg, 2); cx.clip();
-    cx.globalAlpha = 0.4 + 0.6 * f; cx.fillStyle = u.css; cx.fillRect(bx + 5, yy, bw - 10, seg); cx.restore();
-  }
-  cx.globalAlpha = 1; u.tex.needsUpdate = true;
+  const cx = u.cv.getContext('2d'); cx.clearRect(0, 0, 236, 74);
+  const W = 236, tx = 6, tw = W - 12, ty = 38, th = 20;
+  cx.textBaseline = 'alphabetic'; cx.textAlign = 'left';
+  cx.font = '600 15px "IBM Plex Sans", sans-serif'; cx.fillStyle = 'rgba(200,214,228,0.75)';
+  cx.fillText('up the climb', tx + 2, 26);
+  cx.textAlign = 'right'; cx.font = '700 20px "IBM Plex Mono", monospace'; cx.fillStyle = u.css;
+  cx.fillText(k + '%', tx + tw, 27);                                       // the percent up the climb
+  rrect(cx, tx, ty, tw, th, th / 2); cx.fillStyle = 'rgba(12,17,23,0.82)'; cx.fill();   // the track
+  cx.strokeStyle = 'rgba(200,214,228,0.22)'; cx.lineWidth = 2; cx.stroke();
+  if (frac > 0) { cx.save(); rrect(cx, tx, ty, tw, th, th / 2); cx.clip();
+    cx.fillStyle = u.css; cx.fillRect(tx, ty, Math.max(th, tw * frac), th); cx.restore(); }
+  u.tex.needsUpdate = true;
 }
 // the rider's share of the current climb's vertical gain, from the reference road
 // profile: 0 at the foot, 1 at the top; null off a climb
@@ -877,7 +873,7 @@ function makeRider(color, year) {
   shadow.rotation.x = -Math.PI / 2; shadow.position.y = 0.07; g.add(shadow);
   const flag = makeFlag(CSSCOL[year], year); flag.position.set(0, 4.9, 0); g.add(flag);
   let gauge = null;
-  if (MODE === 'climbs') { gauge = makeClimbGauge(CSSCOL[year]); gauge.position.set(0, 8.0, 0); g.add(gauge); }
+  if (MODE === 'climbs') { gauge = makeClimbGauge(CSSCOL[year]); gauge.position.set(0, 7.6, 0); g.add(gauge); }
   // the model is drawn about twice life size: on a fifty mile course the camera sits
   // far enough back that a life size rider would be a couple of pixels
   g.scale.setScalar(RIDER_SCALE);
