@@ -143,10 +143,10 @@
         font:600 11px "IBM Plex Mono",monospace;padding:3px 6px;align-self:center}
   .xtra{display:flex;gap:12px;align-items:center;margin-top:5px;padding-top:5px;border-top:1px solid var(--line)}
   .gauge{width:92px;height:68px;display:block}
-  .rmain .gauge{width:66px;height:49px;flex:0 0 auto}
+  .rmain .gauge{width:86px;height:64px;flex:0 0 auto}
   .nums .u{white-space:nowrap}
   .wbwrap{min-width:72px}
-  .gauge .gzone{fill:none;stroke-width:7;opacity:.42}
+  .gauge .gzone{fill:none;stroke-width:7;opacity:.52}
   .gauge .gtrack{fill:none;stroke:rgba(206,220,234,.14);stroke-width:7;stroke-linecap:round}
   .gauge .gfill{fill:none;stroke:var(--y);stroke-width:7;stroke-linecap:round;transition:stroke-dashoffset .15s linear}
   .gauge .gtick{stroke:#4a5764;stroke-width:1.2}
@@ -237,11 +237,22 @@
     .strip svg{min-height:64px}
     #offscreen{display:none}
   }
-  @media (prefers-reduced-motion:reduce){.bar i,.gauge .gfill{transition:none}}
+  /* a brief play/pause icon in the middle when the scene is tapped, like a video player */
+  #playpulse{position:fixed;left:50%;top:50%;z-index:10;width:78px;height:78px;border-radius:50%;
+    background:rgba(10,14,19,.55);display:flex;align-items:center;justify-content:center;pointer-events:none;
+    opacity:0;transform:translate(-50%,-50%) scale(.7)}
+  #playpulse svg{width:38px;height:38px;fill:#eef1f5}
+  #playpulse.show{animation:ppflash .62s ease-out}
+  @keyframes ppflash{0%{opacity:0;transform:translate(-50%,-50%) scale(.7)}
+    22%{opacity:.95;transform:translate(-50%,-50%) scale(1)}
+    100%{opacity:0;transform:translate(-50%,-50%) scale(1.28)}}
+  @media (prefers-reduced-motion:reduce){.bar i,.gauge .gfill{transition:none}
+    #playpulse.show{animation:ppfade .5s ease-out} @keyframes ppfade{0%{opacity:.9;transform:translate(-50%,-50%) scale(1)}100%{opacity:0;transform:translate(-50%,-50%) scale(1)}}}
 </style>
 <div id="stage"></div>
 <div id="offscreen"></div>
 <div id="sheetscrim"></div>
+<div id="playpulse" aria-hidden="true"></div>
 
 <div class="card" id="topbar">
   <h1 id="title"></h1>
@@ -821,24 +832,24 @@ function drawFlag(sp, w) {
 // the foot of the climb to full at the top, by the share of the climb's vertical
 // gain the rider has reached, so you can read how far up the climb each rider is.
 function makeClimbGauge(css) {
-  const cv = document.createElement('canvas'); cv.width = 236; cv.height = 74;
+  const cv = document.createElement('canvas'); cv.width = 320; cv.height = 116;
   const tex = new THREE.CanvasTexture(cv);
   const sp = new THREE.Sprite(new THREE.SpriteMaterial({map: tex, transparent: true, depthTest: false}));
-  sp.scale.set(5.2, 1.63, 1); sp.renderOrder = 11;
+  sp.scale.set(8.4, 3.05, 1); sp.renderOrder = 11;
   sp.userData = {cv, tex, css, last: -2}; return sp;
 }
 function drawClimbGauge(sp, frac) {
   const u = sp.userData, k = Math.round(frac * 100);
   if (u.last === k) return; u.last = k;
-  const cx = u.cv.getContext('2d'); cx.clearRect(0, 0, 236, 74);
-  const W = 236, tx = 6, tw = W - 12, ty = 38, th = 20;
+  const W = 320, cx = u.cv.getContext('2d'); cx.clearRect(0, 0, W, 116);
+  const tx = 8, tw = W - 16, ty = 58, th = 34;
   cx.textBaseline = 'alphabetic'; cx.textAlign = 'left';
-  cx.font = '600 15px "IBM Plex Sans", sans-serif'; cx.fillStyle = 'rgba(200,214,228,0.75)';
-  cx.fillText('up the climb', tx + 2, 26);
-  cx.textAlign = 'right'; cx.font = '700 20px "IBM Plex Mono", monospace'; cx.fillStyle = u.css;
-  cx.fillText(k + '%', tx + tw, 27);                                       // the percent up the climb
-  rrect(cx, tx, ty, tw, th, th / 2); cx.fillStyle = 'rgba(12,17,23,0.82)'; cx.fill();   // the track
-  cx.strokeStyle = 'rgba(200,214,228,0.22)'; cx.lineWidth = 2; cx.stroke();
+  cx.font = '600 22px "IBM Plex Sans", sans-serif'; cx.fillStyle = 'rgba(206,220,234,0.85)';
+  cx.fillText('UP THE CLIMB', tx + 4, 40);
+  cx.textAlign = 'right'; cx.font = '700 34px "IBM Plex Mono", monospace'; cx.fillStyle = u.css;
+  cx.fillText(k + '%', tx + tw, 42);                                       // the percent up the climb
+  rrect(cx, tx, ty, tw, th, th / 2); cx.fillStyle = 'rgba(12,17,23,0.86)'; cx.fill();   // the track
+  cx.strokeStyle = u.css; cx.globalAlpha = 0.4; cx.lineWidth = 3; cx.stroke(); cx.globalAlpha = 1;
   if (frac > 0) { cx.save(); rrect(cx, tx, ty, tw, th, th / 2); cx.clip();
     cx.fillStyle = u.css; cx.fillRect(tx, ty, Math.max(th, tw * frac), th); cx.restore(); }
   u.tex.needsUpdate = true;
@@ -873,7 +884,7 @@ function makeRider(color, year) {
   shadow.rotation.x = -Math.PI / 2; shadow.position.y = 0.07; g.add(shadow);
   const flag = makeFlag(CSSCOL[year], year); flag.position.set(0, 4.9, 0); g.add(flag);
   let gauge = null;
-  if (MODE === 'climbs') { gauge = makeClimbGauge(CSSCOL[year]); gauge.position.set(0, 7.6, 0); g.add(gauge); }
+  if (MODE === 'climbs') { gauge = makeClimbGauge(CSSCOL[year]); gauge.position.set(0, 8.6, 0); g.add(gauge); }
   // the model is drawn about twice life size: on a fifty mile course the camera sits
   // far enough back that a life size rider would be a couple of pixels
   g.scale.setScalar(RIDER_SCALE);
@@ -2167,23 +2178,29 @@ function onActiveChange() {
 }
 
 // ---------- controls ----------
-let drag = null;
-renderer.domElement.addEventListener('pointerdown', e => { drag = {x: e.clientX, y: e.clientY, az: orbit.az, el: orbit.el, moved: false}; });
+let drag = null, dragMoved = false;
+renderer.domElement.addEventListener('pointerdown', e => { drag = {x: e.clientX, y: e.clientY, az: orbit.az, el: orbit.el, moved: false}; dragMoved = false; });
 addEventListener('pointermove', e => { if (!drag) return; if (Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y) > 3) drag.moved = true;
   orbit.az = drag.az - (e.clientX - drag.x) * 0.006; orbit.el = Math.max(0.05, Math.min(1.3, drag.el + (e.clientY - drag.y) * 0.004)); });
-addEventListener('pointerup', () => { drag = null; });
+addEventListener('pointerup', () => { dragMoved = !!(drag && drag.moved); drag = null; });
 renderer.domElement.addEventListener('wheel', e => {
   if (!zoomTouched) { zoomTouched = true; orbit.dist = camDist; }
   orbit.dist = Math.max(18, Math.min(2400, orbit.dist * (1 + e.deltaY * 0.001)));
 }, {passive: true});
 const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
 renderer.domElement.addEventListener('click', e => {
-  if (drag && drag.moved) return;
   ndc.x = (e.clientX / innerWidth) * 2 - 1; ndc.y = -(e.clientY / innerHeight) * 2 + 1;
   ray.setFromCamera(ndc, camera); ray.params.Points.threshold = 2;
   const hit = ray.intersectObjects(markers, false);
-  if (hit.length) { const ev = hit[0].object.userData.ev; showMoment(momentHTML(ev), clockNow()); hit[0].object.userData.pulse = 1; }
+  if (hit.length) { const ev = hit[0].object.userData.ev; showMoment(momentHTML(ev), clockNow()); hit[0].object.userData.pulse = 1; return; }
+  if (dragMoved) return;   // a camera drag, not a tap
+  const now = !playing; setPlaying(now); flashPlayPulse(now);   // tap the scene to play or pause
 });
+const PP_ICON = {play: '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>', pause: '<svg viewBox="0 0 24 24"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>'};
+function flashPlayPulse(nowPlaying) {   // like a video player: shows the state just entered
+  const p = el('#playpulse'); p.innerHTML = nowPlaying ? PP_ICON.play : PP_ICON.pause;
+  p.classList.remove('show'); void p.offsetWidth; p.classList.add('show');
+}
 function setPlaying(p) { playing = p; el('#play').textContent = p ? 'Pause' : 'Play'; last = null; }
 el('#play').onclick = () => setPlaying(!playing);
 // Auto, then the widest view, then the single-rider follow: the whole course is
