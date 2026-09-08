@@ -179,10 +179,69 @@
   }
   @media (max-width:980px){.mini{display:none}}
   @media (max-height:820px){#moment{max-height:30vh}}
+  /* ---- phones: the scene is the hero; the corner panels become a compact top
+     status pill, a two-column rider bar above the transport, and bottom sheets
+     for chapters, the map, and moment detail, shown one at a time ---- */
+  @media (max-width:640px){
+    #topbar{left:0;right:0;top:0;border-radius:0;padding:6px 10px;gap:5px 8px}
+    #topbar h1{font-size:14px;letter-spacing:.02em}
+    #topbar .sep,#topbar .grow{display:none}
+    #topbar .lab{font-size:9px}
+    .btn{padding:5px 8px;font-size:12px}
+    .btn.ic{width:24px}
+
+    /* the gap headline as a slim pill just above the rider bar */
+    #center{position:fixed;top:auto!important;bottom:calc(var(--dh) + var(--ch) + 6px);
+            left:8px;right:8px;width:auto;max-height:none;overflow:visible;z-index:6;pointer-events:none}
+    #gappanel{padding:6px 12px;display:flex;align-items:baseline;gap:6px 12px;flex-wrap:wrap;pointer-events:auto}
+    #gappanel #gaptitle{display:none}
+    #gappanel #gapmain{font-size:17px;margin:0}
+    #gaprows{font-size:11.5px;line-height:1.35}
+    #gaprows .gv{font-size:14px}
+    #gappanel #gradeline{margin:0 0 0 auto}
+
+    /* rider cards: a compact two-column bar, no gauge, nothing clipped */
+    #cards{left:8px;right:8px;bottom:calc(var(--dh) + 6px);gap:6px;align-items:stretch}
+    .rider{flex:1 1 0;min-width:0;padding:5px 9px 6px}
+    .rmain{gap:7px;flex-wrap:wrap}
+    .rmain .gauge{display:none}
+    .rider .year{font-size:17px}
+    .nums{gap:3px} .nums .disp{font-size:26px;min-width:0}
+    .nums .disp.sp{font-size:19px} .nums .u{font-size:9px}
+    .rider .wbwrap{min-width:60px;flex:1 1 100%}
+    .rider .more{display:none} .rider .xtra{display:none!important}
+
+    /* moment detail, chapters, and the map as bottom sheets over the scene */
+    #about,#moment,#chapters,#minimap{position:fixed!important;left:0;right:0;bottom:0;top:auto!important;
+            width:auto;max-height:56vh;overflow-y:auto;border-radius:14px 14px 0 0;z-index:13;
+            box-shadow:0 -8px 24px rgba(0,0,0,.5);padding:12px 14px 16px}
+    #moment{border-left:0;border-top:3px solid var(--y,var(--muted))}
+    #minimap canvas{width:100%;height:auto;max-height:46vh}
+    #minimap .ml{margin-bottom:6px}
+    #sheetscrim{position:fixed;inset:0;background:rgba(6,9,12,.45);z-index:12;display:none}
+    #sheetscrim.on{display:block}
+
+    /* transport: one scrolling row, scrub on its own line below */
+    #drawer{left:0;right:0;bottom:0;border-radius:14px 14px 0 0;padding:7px 10px 9px}
+    #transport{flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;gap:6px;padding-bottom:3px;scrollbar-width:none}
+    #transport::-webkit-scrollbar{display:none}
+    #transport>*{flex:0 0 auto}
+    #transport #scrub{order:99;flex:1 0 100%;min-width:0;margin-top:2px}
+    #transport #clock{order:100} #transport #odo{order:101}
+    #transport #curchap{display:none}
+    #drawtabs{gap:6px;overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none}
+    #drawtabs::-webkit-scrollbar{display:none}
+    #drawtabs>*{flex:0 0 auto}
+    /* the strip labels overlapped the axis on a narrow chart; the toggle names them */
+    .strip .stitle,.strip .cap{display:none}
+    .strip svg{min-height:64px}
+    #offscreen{display:none}
+  }
   @media (prefers-reduced-motion:reduce){.bar i,.gauge .gfill{transition:none}}
 </style>
 <div id="stage"></div>
 <div id="offscreen"></div>
+<div id="sheetscrim"></div>
 
 <div class="card" id="topbar">
   <h1 id="title"></h1>
@@ -284,6 +343,7 @@ const ACTIVE = new Set((DATA.active_years && DATA.active_years.length ? DATA.act
 if (!ACTIVE.size) YEARS.forEach(y => ACTIVE.add(y));
 const act = () => YEARS.filter(y => ACTIVE.has(y));
 let sync = MODE === 'climbs' ? 'matched' : 'time', speed = MODE === 'climbs' ? 4 : 30, playing = false, last = null, camMode = 'all';
+const MOBILE = matchMedia('(max-width: 640px)').matches;   // phones get bottom sheets instead of corner panels
 let stripMode = 'power', stripTab = 'power', stripsAll = false, rangeMode = MODE === 'climbs' ? 'chapter' : 'race';
 let tsec = 0, tmax = 1, sdist = 0, smax = 1;
 
@@ -1416,9 +1476,10 @@ function showMoment(payload, clock) {
   const m = el('#moment'); m.innerHTML = payload.html; m.style.setProperty('--y', payload.color); m.classList.remove('hide');
   m.style.opacity = 1;
   momentUntil = clock + 12; momentShown = performance.now();
+  if (MOBILE && window.mSync) window.mSync(null);   // the moment sheet replaces any open panel
 }
 function fireEvent(ev, clock, quiet) {
-  showMoment(momentHTML(ev), clock);
+  if (!MOBILE) showMoment(momentHTML(ev), clock);
   if (!quiet) tick(ev.year + ': ' + ev.label, ev.year);
   const g = riders[ev.year]; if (g) g.userData.flare = 2;
   markers.forEach(m => { if (m.userData.ev === ev) m.userData.pulse = 1; });
@@ -1434,7 +1495,7 @@ function syncMoments(silent) {
   evPtr = i; momentCount = i; el('#mcount').textContent = i;
   if (silent) {
     trackChapter(false);   // settle the chapter first so its card does not replace the event card
-    if (i > 0) showMoment(momentHTML(list[i - 1]), clockNow()); else { el('#moment').classList.add('hide'); momentUntil = -1; el('#moment').style.opacity = 1; }
+    if (i > 0) { if (!MOBILE) showMoment(momentHTML(list[i - 1]), clockNow()); } else { el('#moment').classList.add('hide'); momentUntil = -1; el('#moment').style.opacity = 1; }
     ticker = []; el('#ticker').innerHTML = ''; el('#ticker').classList.add('hide');
   }
 }
@@ -1445,7 +1506,7 @@ function trackChapter(showCard) {
   lastChapterId = c.id; curChapter = c;
   Object.keys(CHB).forEach(k => CHB[k].btn.classList.toggle('on', +k === c.id));
   el('#curchap').textContent = c.label;
-  if (showCard && c.kind === 'climb') showMoment(climbMomentHTML(c), clockNow());
+  if (showCard && !MOBILE && c.kind === 'climb') showMoment(climbMomentHTML(c), clockNow());
 }
 function advanceMoments() {
   const list = evList(), pos = evPos(), key = evKey;
@@ -2129,6 +2190,27 @@ el('#hintbtn').onclick = () => { const h = el('#hint'); h.classList.toggle('hide
 el('#hintclose').onclick = () => { el('#hint').classList.add('hide'); el('#hintbtn').classList.remove('on'); };
 el('#chapbtn').onclick = () => { const c = el('#chapters'); const open = c.classList.toggle('hide') === false;
   el('#chapbtn').classList.toggle('on', open); if (open) updateChapterProgress(); };
+// On a phone the map, chapters, about, and moment panels are bottom sheets shown
+// one at a time over the scene. mSync keeps only one of the toggled panels open,
+// updates the buttons, and shows a backdrop; opening a moment (via a road marker)
+// closes them.
+if (MOBILE) {
+  const scrim = el('#sheetscrim'), SCR = ['#minimap', '#chapters', '#about'];
+  const isOpen = s => !el(s).classList.contains('hide');
+  window.mSync = function (keep) {
+    SCR.forEach(s => { if (s !== keep) el(s).classList.add('hide'); });
+    if (keep && SCR.indexOf(keep) >= 0) el('#moment').classList.add('hide');
+    el('#mapbtn').classList.toggle('on', isOpen('#minimap'));
+    el('#chapbtn').classList.toggle('on', isOpen('#chapters'));
+    el('#aboutbtn').classList.toggle('on', isOpen('#about'));
+    scrim.classList.toggle('on', SCR.some(isOpen));
+  };
+  el('#mapbtn').addEventListener('click', () => window.mSync(isOpen('#minimap') ? '#minimap' : null));
+  el('#chapbtn').addEventListener('click', () => window.mSync(isOpen('#chapters') ? '#chapters' : null));
+  el('#aboutbtn').addEventListener('click', () => window.mSync(isOpen('#about') ? '#about' : null));
+  scrim.addEventListener('click', () => window.mSync(null));
+  el('#moment').addEventListener('click', () => el('#moment').classList.add('hide'));
+}
 document.querySelectorAll('#drawtabs [data-tab]').forEach(b => b.onclick = () => {
   stripTab = b.dataset.tab; if (b.dataset.mode) stripMode = b.dataset.mode;
   document.querySelectorAll('#drawtabs [data-tab]').forEach(x => x.classList.toggle('on', x === b));
@@ -2213,7 +2295,8 @@ measureStrips(); showStripTab();
 if (sync === 'matched') enterMatched(0); else seek(true);
 sizeDock(); placePanels();
 // on the climb page the chapter list is the climb picker, so it opens with the page
-if (MODE === 'climbs') { el('#chapters').classList.remove('hide'); el('#chapbtn').classList.add('on'); updateChapterProgress(); }
+if (MODE === 'climbs' && !MOBILE) { el('#chapters').classList.remove('hide'); el('#chapbtn').classList.add('on'); updateChapterProgress(); }
+if (MOBILE) { ['#minimap', '#chapters', '#about', '#moment'].forEach(s => el(s).classList.add('hide')); el('#mapbtn').classList.remove('on'); el('#chapbtn').classList.remove('on'); }
 // one reference road means nothing to choose between
 if (REFS.length < 2) { el('#refbtns').classList.add('hide'); el('#refbtns').previousElementSibling.classList.add('hide'); }
 if (!reduced) setPlaying(true);
