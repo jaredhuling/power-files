@@ -407,7 +407,7 @@ if (!ACTIVE.size) YEARS.forEach(y => ACTIVE.add(y));
 const act = () => YEARS.filter(y => ACTIVE.has(y));
 let sync = MODE === 'climbs' ? 'matched' : 'time', speed = MODE === 'climbs' ? 4 : 30, playing = false, last = null, camMode = 'all';
 const MOBILE = matchMedia('(max-width: 640px)').matches;   // phones get bottom sheets instead of corner panels
-let stripMode = 'power', stripTab = 'power', stripsAll = false, rangeMode = MODE === 'climbs' ? 'chapter' : 'race';
+let stripMode = 'power', stripTab = MODE === 'climbs' ? 'profile' : 'power', stripsAll = false, rangeMode = MODE === 'climbs' ? 'chapter' : 'race';
 let tsec = 0, tmax = 1, sdist = 0, smax = 1;
 
 document.getElementById('title').textContent = DATA.title; document.title = DATA.title;
@@ -1962,9 +1962,15 @@ function buildStrips(d0, d1) {
     const rng = a1 - a0, gstep = rng > 600 ? 200 : rng > 300 ? 100 : rng > 120 ? 50 : 20;
     for (let a = Math.ceil(a0 / gstep) * gstep; a < a1; a += gstep)
       grid += '<line x1="' + X0 + '" x2="' + X1 + '" y1="' + Y(a).toFixed(1) + '" y2="' + Y(a).toFixed(1) + '" stroke="rgba(206,220,234,.11)"/><text x="' + (X0 + 3) + '" y="' + (Y(a) - 2).toFixed(1) + '" fill="#95a2b0" font-size="9.5" font-family="IBM Plex Sans">' + a + ' ft</text>';
-    svg.querySelector('.stat').innerHTML = chapterBands(d0, d1, X, H - 16, 0.5) + '<path d="' + area + '" fill="#3b3527"/>' + grid +
-      '<path d="' + d + '" fill="none" stroke="#d1ad6d" stroke-width="1.5"/>' + milePosts(d0, d1, X, H);
-    el('#profilecap').textContent = 'low ' + Math.round(a0 + pad) + ' ft, high ' + Math.round(a1 - pad) + ' ft';
+    // the fill is colored by the road's grade on the same scale as the ribbon and
+    // the road-grade legend, so the profile reads as the same road
+    const pstops = [];
+    for (let k = 0; k <= 80; k++) { const s = d0 + (d1 - d0) * k / 80;
+      pstops.push('<stop offset="' + (100 * k / 80).toFixed(1) + '%" stop-color="' + hexOf(gradeColor(gradeAtS(s))) + '"/>'); }
+    svg.querySelector('.stat').innerHTML = '<defs><linearGradient id="pg" x1="0" x2="1">' + pstops.join('') + '</linearGradient></defs>' +
+      chapterBands(d0, d1, X, H - 16, 0.5) + '<path d="' + area + '" fill="url(#pg)" opacity="0.92"/>' + grid +
+      '<path d="' + d + '" fill="none" stroke="#0d1218" stroke-width="1.6" opacity="0.65"/>' + milePosts(d0, d1, X, H);
+    el('#profilecap').textContent = 'low ' + Math.round(a0 + pad) + ' ft, high ' + Math.round(a1 - pad) + ' ft, colored by grade';
   }
   // grade, on the same x scale, colored by the road's own grade scale
   {
@@ -2566,6 +2572,8 @@ sizeDock(); placePanels();
 // on the climb page the chapter list is the climb picker, so it opens with the page
 if (MODE === 'climbs' && !MOBILE) { el('#chapters').classList.remove('hide'); el('#chapbtn').classList.add('on'); updateChapterProgress(); }
 if (MOBILE) { ['#minimap', '#chapters', '#about', '#moment'].forEach(s => el(s).classList.add('hide')); el('#mapbtn').classList.remove('on'); el('#chapbtn').classList.remove('on'); }
+// mark the strip button that matches the starting tab (the climb page opens on the elevation profile)
+document.querySelectorAll('#drawtabs [data-tab]').forEach(x => x.classList.toggle('on', x.dataset.tab === stripTab && (!x.dataset.mode || x.dataset.mode === stripMode)));
 // one reference road means nothing to choose between
 if (REFS.length < 2) { el('#refbtns').classList.add('hide'); el('#refbtns').previousElementSibling.classList.add('hide'); }
 if (!reduced) setPlaying(true);
