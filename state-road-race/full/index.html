@@ -250,6 +250,38 @@
     100%{opacity:0;transform:translate(-50%,-50%) scale(1.28)}}
   @media (prefers-reduced-motion:reduce){.bar i,.gauge .gfill{transition:none}
     #playpulse.show{animation:ppfade .5s ease-out} @keyframes ppfade{0%{opacity:.9;transform:translate(-50%,-50%) scale(1)}100%{opacity:0;transform:translate(-50%,-50%) scale(1)}}}
+
+  /* Keep the story and transport visible while the detail panels stay optional. */
+  :root{--panel:rgba(15,23,34,.9);--panel2:rgba(47,63,81,.75);--r:12px;--muted:#afbdca}
+  .btn{min-height:32px;transition:background .15s,border-color .15s}
+  .btn:disabled{opacity:.35;cursor:default}
+  #play{background:var(--accent);color:#17202b;border-color:var(--accent);min-width:66px}
+  #story{display:flex;align-items:center;gap:12px;padding:2px 0 9px;margin-bottom:8px;border-bottom:1px solid var(--line)}
+  #storycopy{flex:1;min-width:0}
+  #storytitle{font:600 18px "IBM Plex Sans",sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #storydetail{font-size:12px;color:var(--muted);margin-top:2px}
+  #storyprogress{width:120px;flex:0 0 auto;font:500 11px "IBM Plex Mono",monospace;color:var(--muted);text-align:right}
+  #storyprogress .bar{margin-top:6px} #storyfill{background:var(--accent)}
+  .rider{flex:1 1 0;container-type:inline-size}
+  @container(max-width:570px){
+    .rmain{flex-wrap:wrap;gap:8px}.rmain .gauge{display:none}.mini{display:none}
+    .nums .disp{font-size:30px}
+  }
+  #curchap{display:none}
+  #scrub{accent-color:var(--accent);cursor:pointer}
+  body.focus #rightcol,body.focus #moment,body.focus #ticker,body.focus #chapters,body.focus #minimap,
+  body.focus #drawtabs,body.focus #strips,body.focus .rmain .gauge,body.focus .xtra{display:none!important}
+  body.focus #center{max-height:none}
+  @media(min-width:641px){#drawer{padding:12px 16px} .rider{padding:10px 14px}}
+  @media(max-width:640px){
+    #story{gap:7px;padding-bottom:7px;margin-bottom:5px} #storytitle{font-size:14px}
+    #storydetail{font-size:10px} #storyprogress{width:64px;font-size:10px}
+    #story .btn{padding:4px 7px;min-height:36px}
+    #transport{flex-wrap:wrap;overflow:visible} #transport .lab,#transport #mcount{display:none}
+    #transport [data-s]{display:none} #transport [data-s="1"],#transport [data-s="8"],#transport [data-s="30"],#transport [data-s="120"]{display:inline-block}
+    #transport #scrub{flex:1 1 100%;width:100%;height:24px;order:99}
+    #transport #clock,#transport #odo{display:inline-block}
+  }
 </style>
 <div id="stage"></div>
 <div id="offscreen"></div>
@@ -283,7 +315,8 @@
 <div id="rightcol">
   <div class="card hide" id="hint">
     <button id="hintclose" aria-label="Close the help panel">&times;</button>
-    <b>Drag</b> orbits, <b>wheel</b> zooms, <b>space</b> plays, arrows scrub, keys 1 to 7 set speed, <b>c</b> changes the camera.
+    <b>Drag</b> orbits, <b>wheel</b> zooms, <b>space</b> plays, arrows scrub, keys 1 to 7 set speed, <b>c</b> changes the camera, <b>f</b> toggles focus view. Use the arrows beside the chapter title to jump between chapters.
+    <b>Road detail</b> toggles the power wall and event markers; Focus also hides them. Follow cameras show the nearby race distance to keep other laps from overlapping it.
     Road picks the course the others are matched onto. Sync switches the same clock for the same distance;
     <b>Matched start</b> runs the chapters every rider shares, each one from a standing start together.
     Click a road marker to reopen its card.
@@ -303,11 +336,20 @@
 <div id="cards"></div>
 
 <div class="card" id="drawer">
+  <div id="story">
+    <button class="btn" id="prevchapter" aria-label="Previous chapter" title="Previous chapter">‹</button>
+    <div id="storycopy"><div class="lab" id="storylabel">Replay</div><div id="storytitle"></div><div id="storydetail"></div></div>
+    <div id="storyprogress"><span id="storyremaining"></span><div class="bar"><i id="storyfill"></i></div></div>
+    <button class="btn" id="nextchapter" aria-label="Next chapter" title="Next chapter">›</button>
+  </div>
   <div id="transport">
     <button class="btn" id="play">Play</button>
     <span class="lab">speed</span>
     <button class="btn" data-s="1">1x</button><button class="btn" data-s="4">4x</button><button class="btn" data-s="8">8x</button><button class="btn" data-s="10">10x</button><button class="btn" data-s="30">30x</button><button class="btn" data-s="60">60x</button><button class="btn" data-s="120">120x</button>
     <span class="lab">camera</span><button class="btn" id="cam">Auto</button>
+    <button class="btn" id="focus" aria-pressed="false" title="Hide detail panels (F)">Focus</button>
+    <button class="btn on" id="details" aria-pressed="true" title="Show power charts and event markers beside the road">Road detail</button>
+    <button class="btn" id="resetview" title="Reset camera angle and zoom">Reset view</button>
     <input id="scrub" type="range" min="0" max="1000" value="0" aria-label="Replay position">
     <span id="clock">0:00</span>
     <span id="odo" class="lab">0.00 mi</span>
@@ -400,6 +442,9 @@ const sky = new THREE.Mesh(new THREE.SphereGeometry(5000, 32, 20),
   new THREE.MeshBasicMaterial({map: skyTexture(), side: THREE.BackSide, fog: false, depthWrite: false}));
 sky.renderOrder = -2; scene.add(sky);
 
+// Opaque background pass: a transparent ground is rendered AFTER opaque roads,
+// regardless of renderOrder, and can wash descending stretches gray. It must
+// not write depth because it is a visual datum, not terrain that occludes riders.
 // ground: a faint contour-like grid that the fog fades out with distance
 function gridTexture() {
   const S = 256, cv = document.createElement('canvas'); cv.width = cv.height = S; const cx = cv.getContext('2d');
@@ -413,7 +458,7 @@ function gridTexture() {
 const GROUND_S = 14000, GROUND_R = 560;   // one grid cell is 25 scene units
 const groundTex = gridTexture(); groundTex.repeat.set(GROUND_R, GROUND_R);
 const ground = new THREE.Mesh(new THREE.PlaneGeometry(GROUND_S, GROUND_S),
-  new THREE.MeshBasicMaterial({map: groundTex, transparent: true, opacity: 0.92}));
+  new THREE.MeshBasicMaterial({map: groundTex, depthWrite: false}));
 ground.rotation.x = -Math.PI / 2; ground.renderOrder = -1; scene.add(ground);
 let GY = -20;
 
@@ -524,7 +569,18 @@ function updateLabels() {
   const d = camera.position.distanceTo(camTarget), f = Math.max(1, Math.min(8, d / LABEL_D0));
   const far = f > 2.2, veryFar = f > 4, tanH = Math.tan(camera.fov * Math.PI / 360);
   for (let i = 0; i < LABELS.length; i++) { const sp = LABELS[i], u = sp.userData; if (!u.base) continue;
-    if (u.tier === 'rider') continue;   // the flag rides inside the rider group, which already grows with distance
+    if (u.tier === 'rider') {
+      // Keep the year and watts readable even when the camera pulls back.
+      const depth = -sp.getWorldPosition(_lp).applyMatrix4(camera.matrixWorldInverse).z;
+      const w = Math.max(u.base.x, 104 * 2 * Math.max(1, depth) * tanH / innerHeight / sp.parent.scale.x);
+      const ratio = w / u.base.x;
+      sp.center.x = .5;
+      sp.scale.copy(u.base).multiplyScalar(ratio);
+      sp.position.y = 4.9 + (sp.scale.y - u.base.y) / 2;
+      const gauge = sp.parent.userData.gauge;
+      if (gauge) { gauge.center.x = .5; gauge.scale.set(8.4 * ratio, 3.05 * ratio, 1); gauge.position.y = sp.position.y + sp.scale.y / 2 + gauge.scale.y / 2 + .25; }
+      continue;
+    }
     const dl = camera.position.distanceTo(sp.getWorldPosition(_lp));
     const want = (LABEL_PX[u.tier] || 100) * 2 * dl * tanH / innerHeight;
     const w = Math.max(u.base.x, want);   // the pixel target is the cap: the whole-course overview sits tens of thousands of units back
@@ -532,6 +588,44 @@ function updateLabels() {
     if (u.tier === 'mile' || u.tier === 'wall') sp.visible = !far;
     else if (u.tier === 'event') u.farHide = veryFar;
     else if (u.tier === 'ghost') sp.visible = !veryFar; }
+}
+// Give rider flags first claim on screen space. Suppress lower-priority chips
+// when they overlap, instead of drawing several unreadable labels in one place.
+const labelPoint = new THREE.Vector3(), labelScale = new THREE.Vector3();
+function declutterLabels() {
+  const occupied = [], candidates = [];
+  const priority = {rider: 0, gate: 1, note: 2, ghost: 3, event: 4, std: 5, mile: 6, wall: 7};
+  LABELS.forEach(sp => {
+    if (!sp.visible) return;
+    for (let parent = sp.parent; parent; parent = parent.parent) if (!parent.visible) return;
+    sp.getWorldPosition(labelPoint); const depth = labelPoint.clone().applyMatrix4(camera.matrixWorldInverse).z;
+    if (depth >= -1) return;
+    labelPoint.project(camera); sp.getWorldScale(labelScale);
+    const pixels = innerHeight / (-2 * depth * Math.tan(camera.fov * Math.PI / 360));
+    const x = (labelPoint.x + 1) * innerWidth / 2, y = (1 - labelPoint.y) * innerHeight / 2;
+    const w = labelScale.x * pixels, h = labelScale.y * pixels;
+    if (x + w / 2 < 0 || x - w / 2 > innerWidth || y + h / 2 < 0 || y - h / 2 > innerHeight) return;
+    const extra = sp.userData.tier === 'rider' && sp.parent.userData.gauge ? h : 0;
+    candidates.push({sp, rect: [x - w / 2 - 4, y - h / 2 - 3 - extra, x + w / 2 + 4, y + h / 2 + 3], priority: priority[sp.userData.tier] ?? 5, depth});
+  });
+  candidates.sort((a, b) => a.priority - b.priority || b.depth - a.depth);
+  candidates.forEach(({sp, rect: r, priority}) => {
+    const overlaps = rect => occupied.some(b => rect[0] < b[2] && rect[2] > b[0] && rect[1] < b[3] && rect[3] > b[1]);
+    if (priority === 0 && overlaps(r)) {
+      const width = r[2] - r[0] - 8;
+      for (const offset of [-1, 1, -2, 2]) {
+        const shifted = [r[0] + width * offset, r[1], r[2] + width * offset, r[3]];
+        if (shifted[0] < 4 || shifted[2] > innerWidth - 4 || overlaps(shifted)) continue;
+        sp.center.x = .5 - offset;
+        const gauge = sp.parent.userData.gauge;
+        if (gauge) gauge.center.x = .5 - offset * sp.scale.x / gauge.scale.x;
+        r = shifted; break;
+      }
+    }
+    if (priority > 0 && occupied.some(b => r[0] < b[2] && r[2] > b[0] && r[1] < b[3] && r[3] > b[1])) {
+      sp.visible = false; sp.userData.layoutHidden = true;
+    } else occupied.push(r);
+  });
 }
 function label(text, color, w) {
   const cv = document.createElement('canvas'); cv.width = 512; cv.height = 104; const cx = cv.getContext('2d');
@@ -586,6 +680,46 @@ function buildSegments() {
 }
 function inSegW(s) { const i = idxAtS(s); for (let k = 0; k < SEGW.length; k++) if (i >= SEGW[k][0] && i <= SEGW[k][1]) return true; return false; }
 function inSeg(s) { const i = idxAtS(s); for (let k = 0; k < SEG.length; k++) if (i >= SEG[k][0] && i <= SEG[k][1]) return true; return false; }
+// Limit follow views by course distance, not geographic position: on a lap
+// course several recordings occupy the same ground at different elevations.
+// Draw ranges keep other laps from covering the road and power wall in view.
+const COURSE_GEOMETRY = [], COURSE_OBJECTS = [];
+let roadWindow = [0, Infinity], detailsOn = true, powerWallGroup = null;
+function courseGeometry(geometry, distances, stride = 6, connected = true) {
+  if (MODE !== 'race') return;
+  COURSE_GEOMETRY.push({geometry, distances, stride, connected});
+}
+function courseObject(object, s) { COURSE_OBJECTS.push({object, s}); return object; }
+function lowerDistance(a, s) {
+  let lo = 0, hi = a.length;
+  while (lo < hi) { const mid = (lo + hi) >>> 1; if (a[mid] < s) lo = mid + 1; else hi = mid; }
+  return lo;
+}
+function updateRoadWindow() {
+  const all = camMode === 'over' || MODE !== 'race';
+  const positions = act().map(y => RS[y]).filter(r => r && !r.off && r.s != null).map(r => r.s);
+  const lead = positions.length ? Math.max(...positions) : curS();
+  const anchor = camMode === 'leader' ? lead : (RS[REF] && RS[REF].s != null ? RS[REF].s : lead);
+  const nearby = positions.filter(s => Math.abs(s - anchor) < 2500);
+  roadWindow = all ? [0, path.len] : [Math.max(0, Math.min(anchor, ...nearby) - 700), Math.min(path.len, Math.max(anchor, ...nearby) + 1600)];
+  for (const {geometry, distances: ds, stride, connected} of COURSE_GEOMETRY) {
+    if (all) { geometry.setDrawRange(0, Infinity); continue; }
+    const lo = Math.max(0, lowerDistance(ds, roadWindow[0]) - (connected ? 1 : 0));
+    const hi = Math.min(ds.length - (connected ? 1 : 0), lowerDistance(ds, roadWindow[1]) + (connected ? 1 : 0));
+    geometry.setDrawRange(lo * stride, Math.max(0, hi - lo) * stride);
+  }
+  const detailed = detailsOn && !document.body.classList.contains('focus');
+  if (powerWallGroup) powerWallGroup.visible = detailed && camMode !== 'over';
+  COURSE_OBJECTS.forEach(({object, s}) => {
+    object.visible = object.visible && (all || (s >= roadWindow[0] && s <= roadWindow[1])) && (object.userData.tier !== 'wall' || detailed);
+  });
+  markers.forEach(m => {
+    const u = m.userData, visible = detailed && (all || (u.ev.s >= roadWindow[0] && u.ev.s <= roadWindow[1]));
+    m.visible = visible; u.post.visible = visible;
+    if (!visible) { u.chip.visible = false; if (u.band) u.band.visible = false; }
+  });
+}
+
 function buildTerrain() {
   const n = path.n;
   // road surface, colored by the smoothed grade, plus two shoulder bands. The
@@ -608,6 +742,7 @@ function buildTerrain() {
     nv += 2 * (run[1] - run[0] + 1);
     });
     g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(c, 3)); g.setIndex(idx); g.computeVertexNormals();
+    courseGeometry(g, path.cum);
     // The road surface is drawn last and without a depth test, so a shoulder or
     // a wide band belonging to another lap, or to the same road running beside
     // itself, can never cover it. It keeps the fog, which now follows the camera
@@ -625,13 +760,14 @@ function buildTerrain() {
     const v = [];
     for (let i = run[0]; i <= run[1]; i++) { const p = path.pts[i]; v.push(p.x, p.y + 0.3, p.z); }
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
+    courseGeometry(g, path.cum, 1, false);
     const line = new THREE.Line(g, new THREE.LineBasicMaterial({color: 0xe9eef3, transparent: true, opacity: 0.55, depthTest: false}));
     line.renderOrder = 4; world.add(line);
   });
   // a lighter edge line on each side of the ribbon
-  {
+  for (const sgn of [-1, 1]) {
     const v = [], idx = []; let nv = 0;
-    for (const sgn of [-1, 1]) SEG.forEach(run => {
+    SEG.forEach(run => {
       for (let i = run[0]; i <= run[1]; i++) {
         const p = path.pts[i], nn = path.nrm[i];
         for (const o of [4.40, 5.05]) v.push(p.x + nn[0] * sgn * o, p.y + 0.06, p.z + nn[1] * sgn * o);
@@ -640,14 +776,16 @@ function buildTerrain() {
       nv += 2 * (run[1] - run[0] + 1);
     });
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3)); g.setIndex(idx);
+    courseGeometry(g, path.cum);
     world.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({color: 0xd6dee6, transparent: true, opacity: 0.42, side: THREE.DoubleSide, depthWrite: false})));
   }
   // a thin center dash
   {
-    const v = [], idx = []; let nv = 0, step = 24;
+    const v = [], idx = [], distances = []; let nv = 0, step = 24;
     const a = new THREE.Vector3(), b = new THREE.Vector3();
     for (let s = step; s < path.len - step; s += step) {
       if (!inSeg(s)) continue;
+      distances.push(s);
       pointAtS(s, a); pointAtS(Math.min(path.len, s + 7), b);
       const na = normAtS(s), nb = normAtS(Math.min(path.len, s + 7));
       v.push(a.x + na[0] * 0.26, a.y + 0.08, a.z + na[1] * 0.26, a.x - na[0] * 0.26, a.y + 0.08, a.z - na[1] * 0.26,
@@ -655,26 +793,29 @@ function buildTerrain() {
       idx.push(nv, nv + 1, nv + 2, nv + 1, nv + 3, nv + 2); nv += 4;
     }
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3)); g.setIndex(idx);
+    courseGeometry(g, distances, 6, false);
     world.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({color: 0xe6e0cc, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false})));
   }
   // 500-ft posts, merged into one mesh so the whole race stays one draw call
-  const step = 500 * FT, v = [], idx = []; let nv = 0;
+  const step = 500 * FT, v = [], idx = [], postDistances = []; let nv = 0;
   const corners = [[-1, -1, -1], [1, -1, -1], [1, 1, -1], [-1, 1, -1], [-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]];
   const faces = [0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6, 0, 4, 5, 0, 5, 1, 1, 5, 6, 1, 6, 2, 2, 6, 7, 2, 7, 3, 3, 7, 4, 3, 4, 0];
   for (let s = step; s < path.len; s += step) {
     if (!inSegW(s)) continue;
+    postDistances.push(s);
     const p = pointAtS(s); const cy = p.y + 1.9;
     for (const cc of corners) v.push(p.x + cc[0] * 0.17, cy + cc[1] * 1.9, p.z + cc[2] * 0.17);
     for (const k of faces) idx.push(nv + k);
     nv += 8;
   }
   const pg = new THREE.BufferGeometry(); pg.setAttribute('position', new THREE.Float32BufferAttribute(v, 3)); pg.setIndex(idx); pg.computeVertexNormals();
+  courseGeometry(pg, postDistances, 36, false);
   world.add(new THREE.Mesh(pg, new THREE.MeshLambertMaterial({color: 0x8e99a5})));
   // a camera-facing chip at every mile carries the mile and the local grade
   for (let m = 1; m * MI < path.len; m++) {
     const s = m * MI; if (!inSegW(s)) continue;   // one lap's chips per spot on a circuit
     const p = pointAtS(s);
-    const sp = label('mile ' + m + '  ' + (100 * gradeAtS(s)).toFixed(1) + '%', '#dfe6ee', 30 * LSC); sp.userData.tier = 'mile';
+    const sp = label('mile ' + m + '  ' + (100 * gradeAtS(s)).toFixed(1) + '%', '#dfe6ee', 30 * LSC); sp.userData.tier = 'mile'; courseObject(sp, s);
     sp.position.set(p.x, p.y + 8, p.z); world.add(sp);
   }
 }
@@ -705,8 +846,8 @@ function buildBands() {
 }
 function gate(s, text, color) {
   const p = pointAtS(s), nn = normAtS(s);
-  for (const sgn of [-1, 1]) { const m = new THREE.Mesh(new THREE.BoxGeometry(0.7, 10, 0.7), new THREE.MeshBasicMaterial({color})); m.position.set(p.x + nn[0] * sgn * 5.6, p.y + 5, p.z + nn[1] * sgn * 5.6); world.add(m); }
-  const sp = label(text, '#dfe6ee', 34 * LSC); sp.userData.tier = 'gate'; sp.position.set(p.x, p.y + 14 * (MODE === 'climbs' ? 0.55 : 1), p.z); world.add(sp);
+  for (const sgn of [-1, 1]) { const m = new THREE.Mesh(new THREE.BoxGeometry(0.7, 10, 0.7), new THREE.MeshBasicMaterial({color})); m.position.set(p.x + nn[0] * sgn * 5.6, p.y + 5, p.z + nn[1] * sgn * 5.6); world.add(courseObject(m, s)); }
+  const sp = label(text, '#dfe6ee', 34 * LSC); sp.userData.tier = 'gate'; courseObject(sp, s); sp.position.set(p.x, p.y + 14 * (MODE === 'climbs' ? 0.55 : 1), p.z); world.add(sp);
 }
 // ghost roads: an edition's own track over the stretches where it leaves the reference road
 function buildGhosts() {
@@ -744,6 +885,7 @@ function wallPoint(i, w, out) { const p = path.pts[i], nn = path.nrm[i]; return 
 // one wall per stretch of road the page builds, so a gap between stretches is
 // not spanned by a straight line across the scene
 function buildWall() {
+  powerWallGroup = new THREE.Group(); world.add(powerWallGroup);
   const A = act(), clips = {}, fills = [];
   A.forEach(y => { clips[y] = new THREE.Plane(new THREE.Vector3(0, 0, 1), 1e6); });
   const clipFill = A.length === 2 ? new THREE.Plane(new THREE.Vector3(0, 0, 1), 1e6) : null;
@@ -756,18 +898,20 @@ function buildWallSeg(run, A, clips, clipFill, withLabels) {
   for (let i = run[0]; i <= run[1]; i += step) ids.push(i);
   if (ids[ids.length - 1] !== run[1]) ids.push(run[1]);
   if (ids.length < 2) return;
-  const N = ids.length;
+  const N = ids.length, distances = ids.map(i => path.cum[i]);
   // the glass panel
   const bv = [], bi = [];
   for (let k = 0; k < N; k++) { const q0 = wallPoint(ids[k], 0), q1 = wallPoint(ids[k], WALL_MAX); bv.push(q0.x, q0.y, q0.z, q1.x, q1.y, q1.z); if (k) { const j = 2 * k; bi.push(j - 2, j - 1, j, j - 1, j + 1, j); } }
   const bg = new THREE.BufferGeometry(); bg.setAttribute('position', new THREE.Float32BufferAttribute(bv, 3)); bg.setIndex(bi);
-  world.add(new THREE.Mesh(bg, new THREE.MeshBasicMaterial({color: 0x415466, transparent: true, opacity: MODE === 'climbs' ? 0.10 : 0.16, side: THREE.DoubleSide, depthWrite: false, fog: false})));
+  powerWallGroup.add(new THREE.Mesh(bg, new THREE.MeshBasicMaterial({color: 0x415466, transparent: true, opacity: MODE === 'climbs' ? 0.10 : 0.16, side: THREE.DoubleSide, depthWrite: false, fog: false})));
+  courseGeometry(bg, distances);
   // gridlines every 100 W, labelled at 300 to 600
   for (let w = 100; w <= 700; w += 100) {
     const lv = []; for (let k = 0; k < N; k++) { const q = wallPoint(ids[k], w); lv.push(q.x, q.y, q.z); }
     const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(lv, 3));
-    world.add(new THREE.Line(lg, new THREE.LineBasicMaterial({color: 0x8fa3b5, transparent: true, opacity: w % 200 === 0 ? 0.34 : 0.20})));
-    if (withLabels && w >= 300 && w <= 600) { const sp = label(w + ' W', '#a9b6c3', 15 * LSC); sp.userData.tier = 'wall'; sp.position.copy(wallPoint(ids[1], w)); world.add(sp); }
+    powerWallGroup.add(new THREE.Line(lg, new THREE.LineBasicMaterial({color: 0x8fa3b5, transparent: true, opacity: w % 200 === 0 ? 0.34 : 0.20})));
+    courseGeometry(lg, distances, 1, false);
+    if (withLabels && w >= 300 && w <= 600) { const sp = label(w + ' W', '#a9b6c3', 15 * LSC); sp.userData.tier = 'wall'; sp.position.copy(wallPoint(ids[1], w)); powerWallGroup.add(sp); }
   }
   // each active edition's 10-s power over the reference distance, held flat where that edition is off the road
   const series = {};
@@ -780,8 +924,9 @@ function buildWallSeg(run, A, clips, clipFill, withLabels) {
       fv.push(q1.x, q1.y, q1.z, q2.x, q2.y, q2.z); fc.push(c.r, c.g, c.b, c.r, c.g, c.b); if (k) { const j = 2 * k; fi.push(j - 2, j - 1, j, j - 1, j + 1, j); }
     }
     const fg = new THREE.BufferGeometry(); fg.setAttribute('position', new THREE.Float32BufferAttribute(fv, 3)); fg.setAttribute('color', new THREE.Float32BufferAttribute(fc, 3)); fg.setIndex(fi);
-    world.add(new THREE.Mesh(fg, new THREE.MeshBasicMaterial({vertexColors: true, transparent: true, opacity: MODE === 'climbs' ? 0.14 : 0.08, side: THREE.DoubleSide, depthWrite: false})));
-    world.add(new THREE.Mesh(fg, new THREE.MeshBasicMaterial({vertexColors: true, transparent: true, opacity: MODE === 'climbs' ? 0.38 : 0.25, side: THREE.DoubleSide, depthWrite: false, clippingPlanes: [clipFill]})));
+    courseGeometry(fg, distances);
+    powerWallGroup.add(new THREE.Mesh(fg, new THREE.MeshBasicMaterial({vertexColors: true, transparent: true, opacity: MODE === 'climbs' ? 0.14 : 0.08, side: THREE.DoubleSide, depthWrite: false})));
+    powerWallGroup.add(new THREE.Mesh(fg, new THREE.MeshBasicMaterial({vertexColors: true, transparent: true, opacity: MODE === 'climbs' ? 0.38 : 0.25, side: THREE.DoubleSide, depthWrite: false, clippingPlanes: [clipFill]})));
   }
   // WebGL draws every line one pixel wide, which is too faint at the climb
   // page's camera distance, so each edition's curve is a ribbon: a strip
@@ -792,10 +937,11 @@ function buildWallSeg(run, A, clips, clipFill, withLabels) {
     const v = [], idx = [];
     for (let k = 0; k < N; k++) { const q = pts[k]; v.push(q.x, q.y + dy - RIB / 2, q.z, q.x, q.y + dy + RIB / 2, q.z); if (k) { const j = 2 * k; idx.push(j - 2, j - 1, j, j - 1, j + 1, j); } }
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3)); g.setIndex(idx);
+    courseGeometry(g, distances);
     const opt = {color: color, side: THREE.DoubleSide, depthWrite: false};
     if (opacity < 1) { opt.transparent = true; opt.opacity = opacity; }
     if (clip) opt.clippingPlanes = [clip];
-    const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial(opt)); m.renderOrder = 3; world.add(m);
+    const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial(opt)); m.renderOrder = 3; powerWallGroup.add(m);
   }
   A.forEach(y => {
     const pts = []; for (let k = 0; k < N; k++) pts.push(wallPoint(ids[k], series[y][k]));
@@ -806,8 +952,9 @@ function buildWallSeg(run, A, clips, clipFill, withLabels) {
     const ev = []; for (let k = 0; k < N; k++) { const q = wallPoint(ids[k], ED[y].eftp); ev.push(q.x, q.y, q.z); }
     const eg = new THREE.BufferGeometry(); eg.setAttribute('position', new THREE.Float32BufferAttribute(ev, 3));
     const eline = new THREE.Line(eg, new THREE.LineDashedMaterial({color: COL[y], dashSize: 4, gapSize: 3.5, transparent: true, opacity: 0.8}));
-    eline.computeLineDistances(); world.add(eline);
-    if (withLabels) { const sp = label('eFTP ' + ED[y].eftp + ' W', CSSCOL[y], 20 * LSC); sp.userData.tier = 'wall'; sp.position.copy(wallPoint(ids[1], ED[y].eftp)).add(new THREE.Vector3(0, 2, 0)); world.add(sp); }
+    courseGeometry(eg, distances, 1, false);
+    eline.computeLineDistances(); powerWallGroup.add(eline);
+    if (withLabels) { const sp = label('eFTP ' + ED[y].eftp + ' W', CSSCOL[y], 20 * LSC); sp.userData.tier = 'wall'; sp.position.copy(wallPoint(ids[1], ED[y].eftp)).add(new THREE.Vector3(0, 2, 0)); powerWallGroup.add(sp); }
   });
 }
 function setClip(plane, s) { const p = pointAtS(s), t = tangentAtS(s); plane.normal.copy(t).negate(); plane.constant = t.dot(p); }
@@ -1399,7 +1546,7 @@ function goToChapter(c) {
   else { const a = atDist(REF, c.s0); tsec = a ? Math.min(tmax, a.t) : 0; }
   seek();
 }
-function chapterAt(s) { const cs = chapters(); for (let i = 0; i < cs.length; i++) if (s >= cs[i].s0 && s <= cs[i].s1) return cs[i]; return cs[cs.length - 1] || null; }
+function chapterAt(s) { const cs = chapters(); for (let i = cs.length - 1; i >= 0; i--) if (s >= cs[i].s0 - 0.5 && s <= cs[i].s1 + 0.5) return cs[i]; return null; }
 function updateChapterProgress() {
   if (el('#chapters').classList.contains('hide')) return;
   if (sync === 'matched') {
@@ -1619,6 +1766,30 @@ function curS() {   // the position the chapter list and the strips follow
 function resetTrails() { Object.keys(trails).forEach(y => { trails[y].userData.pts.length = 0; trails[y].geometry.setDrawRange(0, 0); }); }
 
 // ---------- HUD ----------
+function updateStory() {
+  const list = listChapters(), c = sync === 'matched' ? MCH[mIdx] : chapterAt(curS());
+  const i = c ? list.findIndex(x => x.id === c.id) : -1;
+  const s = curS(), start = c ? (c.gate0 == null ? c.s0 : c.gate0) : 0;
+  const end = c ? (c.gate1 == null ? c.s1 : c.gate1) : path.len;
+  const f = Math.max(0, Math.min(1, (s - start) / Math.max(1, end - start)));
+  el('#storylabel').textContent = (playing ? 'Playing' : 'Paused') + ' · ' + (c ? (MODE === 'climbs' ? 'Climb ' : 'Chapter ') + (i + 1) + ' / ' + list.length : 'On course');
+  el('#storytitle').textContent = c ? c.label : DATA.title || 'Race replay';
+  const explanation = sync === 'matched' ? 'Each edition starts together' : sync === 'dist' ? 'Comparing efforts at the same distance' : 'Each edition follows the same race clock';
+  el('#storydetail').textContent = explanation + (s < start ? ' · Approaching the start' : s >= end ? ' · Completed' : '');
+  el('#storyremaining').textContent = s < start ? ((start - s) / MI).toFixed(2) + ' mi to start' : ((Math.max(0, end - s)) / MI).toFixed(2) + ' mi left';
+  el('#storyfill').style.width = (100 * f).toFixed(1) + '%';
+  el('#prevchapter').disabled = !list.length || i === 0 || (i < 0 && s < list[0].s0);
+  el('#nextchapter').disabled = !list.length || i === list.length - 1 || (i < 0 && s > list[list.length - 1].s1);
+  el('#scrub').setAttribute('aria-valuetext', el('#clock').textContent + ', ' + el('#odo').textContent);
+}
+function stepChapter(dir) {
+  const list = listChapters(); if (!list.length) return;
+  const i = sync === 'matched' ? mIdx : list.findIndex(c => c === chapterAt(curS()));
+  const upcoming = list.findIndex(c => c.s0 > curS());
+  const next = i < 0 ? (dir > 0 ? upcoming : (upcoming < 0 ? list.length : upcoming) - 1) : i + dir;
+  const index = Math.max(0, Math.min(list.length - 1, next < 0 ? list.length - 1 : next));
+  if (sync === 'matched') enterMatched(index); else goToChapter(list[index]);
+}
 function updateHUD() {
   const A = act();
   YEARS.forEach(y => {
@@ -1650,6 +1821,7 @@ function updateHUD() {
     : sync === 'matched' ? matchedFrac() : tsec / Math.max(1, tmax)));
   drawGaps(A);
   updateChapterProgress();
+  updateStory();
 }
 function gapRow(y, main, tail) {
   return '<div><span class="gy" style="color:' + CSSCOL[y] + '">' + y + '</span> <span class="gv">' + main + '</span>' + (tail || '') + '</div>';
@@ -1848,6 +2020,7 @@ function showStripTab() {
   el('#expand').textContent = stripsAll ? 'Show one' : 'Show all three';
   sizeDock();
 }
+let sceneHeightFraction = 1;
 function sizeDock() {
   const h = el('#drawer').offsetHeight;
   document.documentElement.style.setProperty('--dh', h + 'px');
@@ -1855,6 +2028,11 @@ function sizeDock() {
   // is expanded
   const c = el('#cards').getBoundingClientRect().height;
   document.documentElement.style.setProperty('--ch', Math.round(c) + 'px');
+  // Shift the optical center into the scene above the dock and rider cards.
+  const top = el('#topbar').getBoundingClientRect().bottom + 12;
+  const bottom = Math.max(top + 100, innerHeight - h - c - 28);
+  camera.setViewOffset(innerWidth, innerHeight, 0, (innerHeight - top - bottom) / 2, innerWidth, innerHeight);
+  sceneHeightFraction = Math.max(.25, Math.min(1, (bottom - top) / innerHeight));
 }
 // the top bar wraps to a second row on a narrow window, so the panels under it
 // take their top from its measured bottom rather than a fixed offset
@@ -1868,6 +2046,8 @@ function placePanels() {
 // ---------- scene per frame ----------
 const _q = new THREE.Vector3();
 function updateScene(dtWall) {
+  LABELS.forEach(sp => { if (sp.userData.layoutHidden) { sp.visible = true; sp.userData.layoutHidden = false; } });
+  COURSE_OBJECTS.forEach(({object}) => { object.visible = true; });
   const A = act();
   const rsc = RIDER_SCALE * riderScaleFactor();
   YEARS.forEach(y => { const g = riders[y]; if (g) { g.visible = ACTIVE.has(y); g.scale.setScalar(rsc); } });
@@ -1913,6 +2093,8 @@ function updateScene(dtWall) {
   updateMarkerChips();
   updateCamera(dtWall);
   updateLabels();
+  updateRoadWindow();
+  declutterLabels();
 }
 
 // ---------- camera ----------
@@ -1924,7 +2106,8 @@ function fitsAt(T, dirU, d, pts) {
   const f = T.clone().sub(C).normalize();
   const right = new THREE.Vector3().crossVectors(f, UPV); if (right.lengthSq() < 1e-9) return true; right.normalize();
   const up = new THREE.Vector3().crossVectors(right, f).normalize();
-  const ty = Math.tan(camera.fov * Math.PI / 360) * 0.86, tx = ty * camera.aspect * 0.92;
+  const base = Math.tan(camera.fov * Math.PI / 360);
+  const ty = base * sceneHeightFraction * 0.86, tx = base * camera.aspect * 0.72;
   for (let i = 0; i < pts.length; i++) {
     const v = pts[i].clone().sub(C), z = v.dot(f);
     if (z <= 2) return false;
@@ -2006,7 +2189,7 @@ function updateCamera(dtWall) {
     if (!lastY || r.s < RS[lastY].s) lastY = y; });
   const sLead = leadY ? RS[leadY].s : curS(), sLast = lastY ? RS[lastY].s : sLead;
   // the anchor is the reference edition where it is active, otherwise the leader
-  const anchorY = ACTIVE.has(REF) ? REF : (leadY || A[0]);
+  const anchorY = camMode === 'leader' ? (leadY || A[0]) : ACTIVE.has(REF) ? REF : (leadY || A[0]);
   const rAnchor = RS[anchorY];
   const sAnchor = rAnchor && rAnchor.s != null ? rAnchor.s : sLead;
   // the wide set: every active rider, 300 m of road ahead of the leader, 100 m behind the last
@@ -2025,7 +2208,9 @@ function updateCamera(dtWall) {
   const probeH = camHeading || headW;
   const azP = Math.atan2(-probeH.x, -probeH.z) + orbit.az;
   const dirP = new THREE.Vector3(Math.sin(azP) * Math.cos(orbit.el), Math.sin(orbit.el), Math.cos(azP) * Math.cos(orbit.el));
-  camWide = camMode === 'all' && fitsAt(targetW, dirP, CAM_MAX, wide);
+  const maxDistance = CAM_MAX / Math.max(.4, sceneHeightFraction);
+  // Hysteresis prevents repeated camera switches when the riders hover at the fit limit.
+  camWide = camMode === 'all' && fitsAt(targetW, dirP, maxDistance * (camWide ? 1 : .86), wide);
   const targetN = (rAnchor ? rAnchor.pos.clone() : ps[0].clone()).lerp(pointAtS(Math.min(path.len, sAnchor + 40)), 0.5);
   targetN.y += 4;
   const wantT = camWide ? targetW : targetN;
@@ -2042,7 +2227,7 @@ function updateCamera(dtWall) {
   const back = camHeading.clone().multiplyScalar(-1);
   const az = Math.atan2(back.x, back.z) + orbit.az;
   const dirU = new THREE.Vector3(Math.sin(az) * Math.cos(orbit.el), Math.sin(orbit.el), Math.cos(az) * Math.cos(orbit.el));
-  const wantD = zoomTouched ? orbit.dist : Math.max(CAM_MIN, Math.min(CAM_MAX, fitDist(camTarget, dirU, frame, CAM_MIN, CAM_MAX)));
+  const wantD = zoomTouched ? orbit.dist : Math.max(CAM_MIN, Math.min(maxDistance, fitDist(camTarget, dirU, frame, CAM_MIN, maxDistance)));
   camDist = camSnap ? wantD : camDist + (wantD - camDist) * (reduced ? 1 : 1 - Math.exp(-dtWall / 0.40));
   const want = camTarget.clone().add(dirU.multiplyScalar(camDist));
   const kP = reduced || camSnap ? 1 : 1 - Math.exp(-dtWall / 0.25);
@@ -2140,6 +2325,7 @@ function clearWorld() {
   });
   scene.remove(world); world = new THREE.Group(); scene.add(world);
   riders = {}; trails = {}; markers = []; ghosts = []; bands = {}; wallObj = null;
+  COURSE_GEOMETRY.length = 0; COURSE_OBJECTS.length = 0; powerWallGroup = null;
 }
 function buildWorld() {
   clearWorld();
@@ -2156,7 +2342,7 @@ function buildWorld() {
   const gateOnce = (s, label, col) => {
     if (MODE === 'climbs' && !inSegW(s)) return;
     const p = pointAtS(s), text = MODE === 'climbs' ? label : String(label).replace(/, mile \d+$/, '');
-    if (gateSpots.some(q => q.label === text && Math.hypot(p.x - q.x, p.z - q.z) < 60)) return;
+    if (MODE === 'climbs' && gateSpots.some(q => q.label === text && Math.hypot(p.x - q.x, p.z - q.z) < 60)) return;
     gateSpots.push({x: p.x, z: p.z, label: text}); gate(s, text, col);
   };
   chapters().forEach(c => {
@@ -2229,6 +2415,16 @@ function setCam(m) {
   zoomTouched = false; camSnap = true;
   updateScene(0.016); renderer.render(scene, camera);
 }
+el('#prevchapter').onclick = () => stepChapter(-1);
+el('#nextchapter').onclick = () => stepChapter(1);
+el('#focus').onclick = () => {
+  const on = document.body.classList.toggle('focus');
+  el('#focus').classList.toggle('on', on); el('#focus').setAttribute('aria-pressed', String(on));
+  if (window.mSync) window.mSync(null);
+  sizeDock(); placePanels(); camSnap = true;
+};
+el('#details').onclick = () => { detailsOn = !detailsOn; el('#details').classList.toggle('on', detailsOn); el('#details').setAttribute('aria-pressed', String(detailsOn)); };
+el('#resetview').onclick = () => { orbit.az = .52; orbit.el = .36; setCam('all'); };
 el('#cam').onclick = () => setCam(CAM_ORDER[(CAM_ORDER.indexOf(camMode) + 1) % CAM_ORDER.length]);
 el('#mapbtn').onclick = () => { const m = el('#minimap'); const on = m.classList.toggle('hide') === false;
   el('#mapbtn').classList.toggle('on', on); if (on) drawMinimap(); };
@@ -2291,11 +2487,13 @@ el('#expand').onclick = () => { stripsAll = !stripsAll; showStripTab(); refreshS
 el('#rrace').onclick = () => { rangeMode = 'race'; el('#rrace').classList.add('on'); el('#rchap').classList.remove('on'); refreshStrips(); };
 el('#rchap').onclick = () => { rangeMode = 'chapter'; el('#rchap').classList.add('on'); el('#rrace').classList.remove('on'); refreshStrips(); };
 addEventListener('keydown', e => {
-  if (e.target && /INPUT|BUTTON/.test(e.target.tagName) && e.code !== 'Space') return;
+  if (e.target && (e.target.isContentEditable || /INPUT|BUTTON|SELECT|TEXTAREA/.test(e.target.tagName))) return;
   if (e.code === 'Space') { e.preventDefault(); setPlaying(!playing); }
+  if (e.key === 'f' || e.key === 'F') el('#focus').click();
   if (e.key === 'c' || e.key === 'C') el('#cam').click();
   const dir = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
   if (dir) {
+    e.preventDefault();
     if (sync === 'dist') sdist = Math.max(0, Math.min(smax, sdist + dir * 100));
     else if (sync === 'matched') { mtime = Math.max(mT0, Math.min(mDur, mtime + dir * 5)); mHold = 0; }
     else tsec = Math.max(0, Math.min(tmax, tsec + dir * 5));
