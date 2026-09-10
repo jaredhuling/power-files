@@ -1827,6 +1827,17 @@ function gapRow(y, main, tail) {
   return '<div><span class="gy" style="color:' + CSSCOL[y] + '">' + y + '</span> <span class="gv">' + main + '</span>' + (tail || '') + '</div>';
 }
 function drawGaps(A) {
+  // one edition on its own has nothing to compare against, so the panel reports
+  // where the rider is rather than a gap
+  const solo = A.length < 2;
+  if (solo) {
+    const c = curChapter, r = RS[A[0]];
+    el('#gaptitle').textContent = 'on the climb';
+    const fr = c ? climbElevFrac(r && r.s, c) : null;
+    el('#gapmain').innerHTML = c ? (fr == null ? c.label : Math.round(fr * 100) + '% up ' + c.label) : 'between climbs';
+    el('#gaprows').innerHTML = '';
+    return;
+  }
   if (sync === 'matched') {
     el('#gaptitle').textContent = 'ahead by, against ' + REF;
     const rows = [];
@@ -2426,6 +2437,8 @@ el('#nextchapter').onclick = () => stepChapter(1);
 el('#focus').onclick = () => {
   const on = document.body.classList.toggle('focus');
   el('#focus').classList.toggle('on', on); el('#focus').setAttribute('aria-pressed', String(on));
+  if (on) { el('#mapbtn').classList.remove('on'); el('#chapbtn').classList.remove('on');
+            el('#minimap').classList.add('hide'); el('#chapters').classList.add('hide'); }
   if (window.mSync) window.mSync(null);
   sizeDock(); placePanels(); camSnap = true;
 };
@@ -2433,7 +2446,14 @@ el('#details').onclick = () => { detailsOn = !detailsOn; el('#details').classLis
 el('#resetview').onclick = () => { orbit.az = .52; orbit.el = .36; setCam('all'); };
 el('#cam').onclick = () => setCam(CAM_ORDER[(CAM_ORDER.indexOf(camMode) + 1) % CAM_ORDER.length]);
 el('#mapbtn').onclick = () => { const m = el('#minimap'); const on = m.classList.toggle('hide') === false;
-  el('#mapbtn').classList.toggle('on', on); if (on) drawMinimap(); };
+  el('#mapbtn').classList.toggle('on', on); if (on) { leaveFocus(); drawMinimap(); } };
+// focus view hides the side panels outright, so asking for one leaves focus view
+function leaveFocus() {
+  if (!document.body.classList.contains('focus')) return;
+  document.body.classList.remove('focus');
+  el('#focus').classList.remove('on'); el('#focus').setAttribute('aria-pressed', 'false');
+  sizeDock(); placePanels();
+}
 document.querySelectorAll('#transport [data-s]').forEach(b => b.onclick = () => { speed = +b.dataset.s; document.querySelectorAll('#transport [data-s]').forEach(x => x.classList.toggle('on', x === b)); });
 function setSync(mode) {
   if (mode === sync) return;
@@ -2462,7 +2482,7 @@ el('#aboutbtn').onclick = () => { el('#about').classList.toggle('hide'); el('#ab
 el('#hintbtn').onclick = () => { const h = el('#hint'); h.classList.toggle('hide'); el('#hintbtn').classList.toggle('on', !h.classList.contains('hide')); };
 el('#hintclose').onclick = () => { el('#hint').classList.add('hide'); el('#hintbtn').classList.remove('on'); };
 el('#chapbtn').onclick = () => { const c = el('#chapters'); const open = c.classList.toggle('hide') === false;
-  el('#chapbtn').classList.toggle('on', open); if (open) updateChapterProgress(); };
+  el('#chapbtn').classList.toggle('on', open); if (open) { leaveFocus(); updateChapterProgress(); } };
 // On a phone the map, chapters, about, and moment panels are bottom sheets shown
 // one at a time over the scene. mSync keeps only one of the toggled panels open,
 // updates the buttons, and shows a backdrop; opening a moment (via a road marker)
